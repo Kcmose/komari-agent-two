@@ -3,9 +3,7 @@ module github.com/komari-monitor/komari-agent
 go 1.24.0
 
 require (
-	github.com/UserExistsError/conpty v0.1.4
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/creack/pty v1.1.24
 	github.com/go-ole/go-ole v1.2.6
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/cpuid/v2 v2.3.0

@@ -18,7 +18,6 @@ import (
 	"github.com/komari-monitor/komari-agent/dnsresolver"
 	"github.com/komari-monitor/komari-agent/monitoring"
 	v2 "github.com/komari-monitor/komari-agent/protocol/v2"
-	"github.com/komari-monitor/komari-agent/terminal"
 	"github.com/komari-monitor/komari-agent/utils"
 	"github.com/komari-monitor/komari-agent/ws"
 )
@@ -223,7 +222,7 @@ func runV2PullLoop(ctx context.Context, errCh chan<- error) {
 		pullID := fmt.Sprintf("pull-%d", time.Now().UnixNano())
 		ackIDs := snapshotV2AckEventIDs()
 		payload := v2.NewRequest(pullID, v2.MethodAgentPull, map[string]interface{}{
-			"capabilities":  []string{"exec", "ping", "message", "event", "terminal"},
+			"capabilities":  []string{"exec", "ping", "message", "event"},
 			"ack_event_ids": ackIDs,
 		})
 		resp, err := postV2RequestContext(ctx, payload)
@@ -380,8 +379,6 @@ func handleWebSocketMessages(conn *ws.SafeConn, protocolVersion int, done chan<-
 			Method  string      `json:"method,omitempty"`
 			Params  interface{} `json:"params,omitempty"`
 			Message string      `json:"message"`
-			// Terminal
-			TerminalId string `json:"request_id,omitempty"`
 			// Remote Exec
 			ExecCommand string `json:"command,omitempty"`
 			ExecTaskID  string `json:"task_id,omitempty"`
@@ -400,10 +397,6 @@ func handleWebSocketMessages(conn *ws.SafeConn, protocolVersion int, done chan<-
 			continue
 		}
 
-		if message.Message == "terminal" || message.TerminalId != "" {
-			go establishTerminalConnection(flags.Token, message.TerminalId, flags.Endpoint)
-			continue
-		}
 		if message.Message == "exec" {
 			go NewTask(message.ExecTaskID, message.ExecCommand)
 			continue
@@ -443,16 +436,6 @@ func processV2Event(conn *ws.SafeConn, method string, params interface{}, eventI
 		} else {
 			log.Printf("bad v2 ping params: %v", err)
 		}
-	case v2.MethodAgentTerminal:
-		var p struct {
-			RequestID string `json:"request_id"`
-		}
-		if err := v2.BindParams(params, &p); err == nil {
-			go establishTerminalConnection(flags.Token, p.RequestID, flags.Endpoint)
-			return true
-		} else {
-			log.Printf("bad v2 terminal params: %v", err)
-		}
 	case v2.MethodAgentMessage, v2.MethodAgentEvent:
 		log.Printf("received v2 %s: %+v", method, params)
 		return true
@@ -463,34 +446,6 @@ func processV2Event(conn *ws.SafeConn, method string, params interface{}, eventI
 }
 
 // connectWebSocket attempts to establish a WebSocket connection and upload basic info
-
-// establishTerminalConnection 建立终端连接并使用terminal包处理终端操作
-func establishTerminalConnection(token, id, endpoint string) {
-	endpoint = strings.TrimSuffix(endpoint, "/") + "/api/clients/terminal?token=" + token + "&id=" + id
-	endpoint = "ws" + strings.TrimPrefix(endpoint, "http")
-
-	// 转换中文域名为 ASCII 兼容编码
-	if convertedEndpoint, err := utils.ConvertIDNToASCII(endpoint); err == nil {
-		endpoint = convertedEndpoint
-	} else {
-		log.Printf("Warning: Failed to convert Terminal WebSocket IDN to ASCII: %v", err)
-	}
-
-	// 使用与主 WS 相同的拨号策略
-	dialer := newWSDialer()
-
-	conn, _, err := dialer.Dial(endpoint, nil)
-	if err != nil {
-		log.Println("Failed to establish terminal connection:", err)
-		return
-	}
-
-	// 启动终端
-	terminal.StartTerminal(conn, id)
-	if conn != nil {
-		conn.Close()
-	}
-}
 
 // newWSDialer 构造统一的 WebSocket 拨号器（自定义解析、IPv4/IPv6 动态排序、可选 TLS 忽略）
 func newWSDialer() *websocket.Dialer {

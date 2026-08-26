@@ -17,7 +17,6 @@ const (
 	MethodAgentPing       = "agent.ping"
 	MethodAgentMessage    = "agent.message"
 	MethodAgentEvent      = "agent.event"
-	MethodAgentTerminal   = "agent.terminal.request"
 	MethodAgentPull       = "agent.pull"
 )
 
