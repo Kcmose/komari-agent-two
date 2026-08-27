@@ -222,7 +222,7 @@ func runV2PullLoop(ctx context.Context, errCh chan<- error) {
 		pullID := fmt.Sprintf("pull-%d", time.Now().UnixNano())
 		ackIDs := snapshotV2AckEventIDs()
 		payload := v2.NewRequest(pullID, v2.MethodAgentPull, map[string]interface{}{
-			"capabilities":  []string{"exec", "ping", "message", "event"},
+			"capabilities":  []string{"ping", "message", "event"},
 			"ack_event_ids": ackIDs,
 		})
 		resp, err := postV2RequestContext(ctx, payload)
@@ -379,9 +379,6 @@ func handleWebSocketMessages(conn *ws.SafeConn, protocolVersion int, done chan<-
 			Method  string      `json:"method,omitempty"`
 			Params  interface{} `json:"params,omitempty"`
 			Message string      `json:"message"`
-			// Remote Exec
-			ExecCommand string `json:"command,omitempty"`
-			ExecTaskID  string `json:"task_id,omitempty"`
 			// Ping
 			PingTaskID uint   `json:"ping_task_id,omitempty"`
 			PingType   string `json:"ping_type,omitempty"`
@@ -397,10 +394,6 @@ func handleWebSocketMessages(conn *ws.SafeConn, protocolVersion int, done chan<-
 			continue
 		}
 
-		if message.Message == "exec" {
-			go NewTask(message.ExecTaskID, message.ExecCommand)
-			continue
-		}
 		if message.Message == "ping" || message.PingTaskID != 0 || message.PingType != "" || message.PingTarget != "" {
 			go NewPingTask(conn, protocolVersion, message.PingTaskID, message.PingType, message.PingTarget)
 			continue
@@ -413,17 +406,6 @@ func processV2Event(conn *ws.SafeConn, method string, params interface{}, eventI
 		return true
 	}
 	switch method {
-	case v2.MethodAgentExec:
-		var p struct {
-			TaskID  string `json:"task_id"`
-			Command string `json:"command"`
-		}
-		if err := v2.BindParams(params, &p); err == nil {
-			go NewTask(p.TaskID, p.Command)
-			return true
-		} else {
-			log.Printf("bad v2 exec params: %v", err)
-		}
 	case v2.MethodAgentPing:
 		var p struct {
 			TaskID uint   `json:"ping_task_id"`
