@@ -139,7 +139,7 @@ func httpPing(target string, timeout time.Duration) (int64, error) {
 	return latency, errors.New("http status not ok")
 }
 
-func NewPingTask(conn *ws.SafeConn, protocolVersion int, taskID uint, pingType, pingTarget string) {
+func NewPingTask(conn *ws.SafeConn, taskID uint, pingType, pingTarget string) {
 	if taskID == 0 {
 		log.Printf("Invalid task ID: %d", taskID)
 		return
@@ -198,27 +198,15 @@ func NewPingTask(conn *ws.SafeConn, protocolVersion int, taskID uint, pingType, 
 		pingResult = int(latency)
 	}
 	finishedAt := time.Now()
-	payload := map[string]interface{}{
-		"type":        "ping_result",
-		"task_id":     taskID,
-		"ping_type":   pingType,
-		"value":       pingResult,
-		"finished_at": finishedAt,
-	}
-	var wsPayload interface{} = payload
-	if protocolVersion >= 2 {
-		wsPayload = v2.BuildPingResultPayload(taskID, pingType, pingResult, finishedAt)
-	}
+	wsPayload := v2.BuildPingResultPayload(taskID, pingType, pingResult, finishedAt)
 	// https://github.com/komari-monitor/komari/commit/eb87a4fc330b7d1c407fa4ff70177615a4f50a1f
 	// -1 代表丢包，服务端计算
 	//if pingResult == -1 {
 	//	return
 	//}
 	if conn == nil {
-		if protocolVersion >= 2 {
-			if err := postV2RPC(wsPayload); err != nil {
-				log.Printf("Failed to upload ping result over POST: %v", err)
-			}
+		if err := postV2RPC(wsPayload); err != nil {
+			log.Printf("Failed to upload ping result over POST: %v", err)
 		}
 		return
 	}
@@ -255,11 +243,18 @@ func postV2RPC(payload interface{}) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return &httpStatusError{StatusCode: resp.StatusCode, Status: resp.Status, Body: string(body)}
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return &httpStatusError{StatusCode: resp.StatusCode, Status: resp.Status, Body: string(respBody)}
+	}
+	if len(bytes.TrimSpace(respBody)) > 0 {
+		if _, err := parseV2Response(respBody); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
